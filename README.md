@@ -20,9 +20,17 @@ Single source of truth: `~/.config/shojiwm/src/minka-settings.json`.
 - **input** — pointer speed (libinput accel −1…1), accel profile
   (adaptive/flat), natural scrolling (mouse and touchpad separately),
   tap-to-click, disable-while-typing, touchpad scroll speed.
-- **displays** — connected outputs (via `debug.geometry`) with the mode and
-  the scale the compositor is *currently running*, plus 100–200% scale
-  presets per output.
+- **displays** — visual arrangement, KDE-style: drag monitor rectangles on
+  the canvas (edge-snapped, origin-normalized, committed on release), click
+  to select, then per-output mode (from the compositor's `availableModes`),
+  scale presets, mirror source, enable/disable, and the HDR10 opt-in.
+  Risky changes (mode/mirror/enable/HDR) arm a 12s auto-revert unless
+  confirmed, so a bad mode can't strand the session. Live data comes over
+  IPC (`debug.geometry`); all writes go through `settings.apply` +
+  `minka-settings.json` — deliberately not wlr-output-management, so the
+  settings file stays the single source of truth (the protocol can be added
+  compositor-side later for third-party tools; `wayland-protocols-wlr` is
+  already a dependency).
 
 ## Running
 
