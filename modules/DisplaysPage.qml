@@ -442,7 +442,14 @@ Flickable {
             SettingSwitch {
                 width: parent.width
                 label: "HDR (HDR10 / PQ)"
-                hint: "engages only when the display's EDID advertises PQ support"
+                hint: "this display's EDID advertises HDR support"
+                // Only offered when the display can actually do HDR. Older
+                // compositors don't report capability (hdrSupported absent);
+                // then the toggle only appears if HDR is already enabled, as
+                // an escape hatch to turn it off.
+                visible: root.selectedOutput !== null
+                    && (root.selectedOutput.hdrSupported === true
+                        || Settings.get(`displays.${root.selectedOutput.name}.hdr`, false) === true)
                 checked: root.selectedOutput
                     ? Settings.get(`displays.${root.selectedOutput.name}.hdr`, false) === true
                     : false

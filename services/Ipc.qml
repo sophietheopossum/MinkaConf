@@ -17,6 +17,15 @@ Singleton {
 
     readonly property bool connected: socket.connected
 
+    // Config-schema revision handshake. requiredRevision is what this build
+    // of MinkaConf expects; sessionRevision is what the running config
+    // reports (0 = config too old to even have the handshake, -1 = unknown/
+    // not connected). A mismatch means "reload the config".
+    readonly property int requiredRevision: 2
+    property int sessionRevision: -1
+    readonly property bool revisionStale:
+        connected && sessionRevision >= 0 && sessionRevision < requiredRevision
+
     property int _nextId: 1
     property var _pending: ({})
 
@@ -63,8 +72,15 @@ Singleton {
         }
 
         onConnectedChanged: {
-            if (!connected)
+            if (!connected) {
                 root._pending = {};
+                root.sessionRevision = -1;
+                return;
+            }
+            root.request("minka.revision", undefined, (result, error) => {
+                // "unknown method" = a config from before the handshake.
+                root.sessionRevision = error ? 0 : (result?.revision ?? 0);
+            });
         }
     }
 

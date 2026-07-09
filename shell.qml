@@ -144,10 +144,31 @@ ShellRoot {
             }
         }
 
-        InputPage {
+        // Stale-config banner: the running session predates this app's
+        // settings schema, so edits would only half-apply until a reload.
+        Rectangle {
+            id: staleBanner
+
             anchors.left: sidebar.right
             anchors.right: parent.right
             anchors.top: parent.top
+            height: Ipc.revisionStale ? 34 : 0
+            visible: Ipc.revisionStale
+            color: Theme.redDim
+
+            Text {
+                anchors.centerIn: parent
+                text: "session config is older than MinkaConf — press Super+Shift+R to reload it"
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSize - 1
+                color: Theme.text
+            }
+        }
+
+        InputPage {
+            anchors.left: sidebar.right
+            anchors.right: parent.right
+            anchors.top: staleBanner.bottom
             anchors.bottom: parent.bottom
             visible: win.page === "input"
         }
@@ -155,7 +176,7 @@ ShellRoot {
         DisplaysPage {
             anchors.left: sidebar.right
             anchors.right: parent.right
-            anchors.top: parent.top
+            anchors.top: staleBanner.bottom
             anchors.bottom: parent.bottom
             visible: win.page === "displays"
         }
