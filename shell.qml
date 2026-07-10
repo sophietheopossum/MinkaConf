@@ -64,7 +64,8 @@ ShellRoot {
                 Repeater {
                     model: [
                         { id: "input", label: "input" },
-                        { id: "displays", label: "displays" }
+                        { id: "displays", label: "displays" },
+                        { id: "layout", label: "layout" }
                     ]
 
                     delegate: Rectangle {
@@ -179,6 +180,14 @@ ShellRoot {
             anchors.top: staleBanner.bottom
             anchors.bottom: parent.bottom
             visible: win.page === "displays"
+        }
+
+        LayoutPage {
+            anchors.left: sidebar.right
+            anchors.right: parent.right
+            anchors.top: staleBanner.bottom
+            anchors.bottom: parent.bottom
+            visible: win.page === "layout"
         }
     }
 }
