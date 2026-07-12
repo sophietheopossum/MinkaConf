@@ -118,8 +118,9 @@ done`]
         id: defQuery
 
         running: true
+        // NOTE: no flatMap — Qt's QML engine doesn't implement it.
         command: ["sh", "-c",
-            "for t in " + root.categories.flatMap(c => c.types).join(" ") + "; do"
+            "for t in " + root.categories.map(c => c.types.join(" ")).join(" ") + "; do"
             + " printf '%s\\t%s\\n' \"$t\" \"$(xdg-mime query default \"$t\" 2>/dev/null)\";"
             + " done"]
 
