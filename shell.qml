@@ -66,7 +66,8 @@ ShellRoot {
                         { id: "input", label: "input" },
                         { id: "displays", label: "displays" },
                         { id: "layout", label: "layout" },
-                        { id: "wallpaper", label: "wallpaper" }
+                        { id: "wallpaper", label: "wallpaper" },
+                        { id: "defaults", label: "default apps" }
                     ]
 
                     delegate: Rectangle {
@@ -197,6 +198,14 @@ ShellRoot {
             anchors.top: staleBanner.bottom
             anchors.bottom: parent.bottom
             visible: win.page === "wallpaper"
+        }
+
+        DefaultAppsPage {
+            anchors.left: sidebar.right
+            anchors.right: parent.right
+            anchors.top: staleBanner.bottom
+            anchors.bottom: parent.bottom
+            visible: win.page === "defaults"
         }
     }
 }
