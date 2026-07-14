@@ -21,7 +21,7 @@ Singleton {
     // of MinkaConf expects; sessionRevision is what the running config
     // reports (0 = config too old to even have the handshake, -1 = unknown/
     // not connected). A mismatch means "reload the config".
-    readonly property int requiredRevision: 2
+    readonly property int requiredRevision: 3
     property int sessionRevision: -1
     readonly property bool revisionStale:
         connected && sessionRevision >= 0 && sessionRevision < requiredRevision

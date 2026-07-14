@@ -64,6 +64,7 @@ ShellRoot {
                 Repeater {
                     model: [
                         { id: "input", label: "input" },
+                        { id: "cursor", label: "cursor" },
                         { id: "displays", label: "displays" },
                         { id: "layout", label: "layout" },
                         { id: "wallpaper", label: "wallpaper" },
@@ -174,6 +175,14 @@ ShellRoot {
             anchors.top: staleBanner.bottom
             anchors.bottom: parent.bottom
             visible: win.page === "input"
+        }
+
+        CursorPage {
+            anchors.left: sidebar.right
+            anchors.right: parent.right
+            anchors.top: staleBanner.bottom
+            anchors.bottom: parent.bottom
+            visible: win.page === "cursor"
         }
 
         DisplaysPage {
