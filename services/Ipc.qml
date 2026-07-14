@@ -90,4 +90,16 @@ Singleton {
         running: !socket.connected
         onTriggered: socket.connected = true
     }
+
+    // A config reload doesn't drop the IPC socket, so the one-shot revision
+    // query above would leave the stale banner up forever even after the
+    // user reloads. While stale, re-ask until the session catches up.
+    Timer {
+        interval: 2000
+        repeat: true
+        running: socket.connected && root.revisionStale
+        onTriggered: root.request("minka.revision", undefined, (result, error) => {
+            root.sessionRevision = error ? 0 : (result?.revision ?? 0);
+        })
+    }
 }
