@@ -4,7 +4,7 @@ import "services"
 import "modules"
 
 // MinkaConf — the Minka settings application. Quickshell-hosted floating
-// window; owns ~/.config/shojiwm/src/minka-settings.json and live-applies
+// window; owns ~/.config/minka-settings.json and live-applies
 // changes over the ShojiWM IPC socket (settings.apply).
 ShellRoot {
     FloatingWindow {
