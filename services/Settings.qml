@@ -4,7 +4,8 @@ import Quickshell.Io
 import QtQuick
 
 // The settings store. Single source of truth is
-// ~/.config/shojiwm/src/minka-settings.json — the ShojiWM config imports it
+// ~/.config/minka-settings.json
+// the ShojiWM config imports it
 // at boot, and `settings.apply` over IPC swaps it live at runtime. Every
 // mutation here does both: persist to the file AND apply immediately.
 //
@@ -16,7 +17,8 @@ Singleton {
     id: root
 
     readonly property string settingsPath:
-        Quickshell.env("HOME") + "/.config/shojiwm/src/minka-settings.json"
+        Quickshell.env("HOME") +
+        "/.config/minka-settings.json"
 
     property var data: ({})
     readonly property bool ready: data && data.input !== undefined
