@@ -4,7 +4,7 @@ import "../services"
 // Labeled accordion picker: collapsed shows the current choice, expanded
 // lists options inline (no overlay windows, so it works inside Flickables).
 //   options: [{ label: "1920x1080 @ 60Hz", value: {...} }]
-// `current` is compared to option values by JSON equality.
+// `current` is compared to option values by SORTED-KEY equality (stableKey).
 Rectangle {
     id: root
 
@@ -15,11 +15,30 @@ Rectangle {
 
     signal picked(var value)
 
+    // Order-independent structural key. Plain JSON.stringify cannot be used here:
+    // it preserves insertion order, so {width,height,refreshRate} built by the mode
+    // list never matched the {height,refreshRate,width} the settings file stores
+    // (JSON object keys come back alphabetised). The comparison silently failed and
+    // the collapsed picker fell through to String(current) — the literal text
+    // "[object Object]" — while the matching row also lost its highlight.
+    function stableKey(value) {
+        if (value === null || typeof value !== "object")
+            return JSON.stringify(value);
+        if (Array.isArray(value))
+            return "[" + value.map(root.stableKey).join(",") + "]";
+        return "{" + Object.keys(value).sort()
+            .map(k => JSON.stringify(k) + ":" + root.stableKey(value[k]))
+            .join(",") + "}";
+    }
+
     readonly property string currentLabel: {
         for (const option of options)
-            if (JSON.stringify(option.value) === JSON.stringify(current))
+            if (root.stableKey(option.value) === root.stableKey(current))
                 return option.label;
-        return current === undefined || current === null ? "—" : String(current);
+        // Still no match: show something honest rather than a stringified object.
+        if (current === undefined || current === null)
+            return "—";
+        return typeof current === "object" ? "(custom)" : String(current);
     }
 
     height: 46 + (expanded ? optionColumn.implicitHeight + 8 : 0)
@@ -93,8 +112,8 @@ Rectangle {
                 required property var modelData
 
                 readonly property bool active:
-                    JSON.stringify(optionRow.modelData.value)
-                        === JSON.stringify(root.current)
+                    root.stableKey(optionRow.modelData.value)
+                        === root.stableKey(root.current)
 
                 width: parent.width
                 height: 28
