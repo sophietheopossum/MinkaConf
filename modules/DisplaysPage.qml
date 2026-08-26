@@ -16,8 +16,18 @@ Flickable {
     // Working copy of logical positions while dragging: { name: {x, y} }.
     property var layoutPositions: ({})
 
+    // Layout maths (drag, snapping, collision, world bounds) applies only to
+    // outputs that actually occupy desktop space.
     readonly property var enabledOutputs:
         outputs.filter(o => o.enabled && o.resolution)
+
+    // What the canvas DRAWS. Disabled outputs stay on the canvas, greyed out,
+    // because the canvas is the only way to select an output — filtering them
+    // out made disabling a display a one-way door: the tile vanished, so it
+    // could never be clicked again to re-enable it. They are excluded from
+    // enabledOutputs above, so they still contribute nothing to positioning.
+    readonly property var canvasOutputs:
+        outputs.filter(o => o.resolution)
 
     readonly property var selectedOutput:
         outputs.find(o => o.name === root.selectedName) ?? null
@@ -187,7 +197,7 @@ Flickable {
                 readonly property real offsetY: (height - world.height * fit) / 2
 
                 Repeater {
-                    model: root.enabledOutputs
+                    model: root.canvasOutputs
 
                     delegate: Rectangle {
                         id: monitor
@@ -195,6 +205,7 @@ Flickable {
                         required property var modelData
 
                         readonly property string outputName: modelData.name
+                        readonly property bool outputEnabled: modelData.enabled === true
                         readonly property var pos:
                             root.layoutPositions[outputName] ?? { x: 0, y: 0 }
                         readonly property var size: root.logicalSize(modelData)
@@ -209,7 +220,11 @@ Flickable {
                         color: selected ? Theme.surfaceRaised : Theme.surface
                         border.width: selected ? 2 : 1
                         border.color: selected ? Theme.red : Theme.line
-                        z: selected ? 2 : 1
+                        // Disabled: dimmed and behind the live tiles, but still
+                        // present and still clickable — selecting it is the only
+                        // route back to switching it on.
+                        opacity: outputEnabled ? 1.0 : 0.45
+                        z: selected ? 2 : (outputEnabled ? 1 : 0)
 
                         Column {
                             anchors.centerIn: parent
@@ -227,6 +242,15 @@ Flickable {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: `${monitor.modelData.resolution.width}x${monitor.modelData.resolution.height}`
                                 font.family: Theme.monoFamily
+                                font.pixelSize: Theme.fontSize - 4
+                                color: Theme.textFaint
+                            }
+
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                visible: !monitor.outputEnabled
+                                text: "disabled"
+                                font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontSize - 4
                                 color: Theme.textFaint
                             }
