@@ -58,39 +58,125 @@ Flickable {
         });
     }
 
+    // Operator preference: snap dragged displays to their neighbours, centre them
+    // on the perpendicular axis, and refuse overlaps. ON by default — a monitor
+    // layout is nearly always meant to be flush and aligned, and hand-dragging
+    // to whole-pixel edges on a scaled-down canvas is fiddly. Turning it off
+    // restores free positioning for genuinely irregular arrangements.
+    readonly property bool snapEnabled: Settings.get("minkaconf.snapDisplays", true)
+
+    // Do two rectangles overlap? Touching edges do NOT count — flush is the goal.
+    function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+        return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+    }
+
+    // Push `name` out of every rectangle it intersects, along whichever axis needs
+    // the least movement, until nothing overlaps. Bounded: a pathological layout
+    // must not spin the UI thread, and stopping early leaves a visible overlap
+    // rather than a hang -- the honest failure.
+    function resolveOverlaps(positions, name) {
+        const dragged = root.enabledOutputs.find(o => o.name === name);
+        if (!dragged)
+            return;
+        const size = logicalSize(dragged);
+        for (let pass = 0; pass < 16; pass++) {
+            let moved = false;
+            for (const other of root.enabledOutputs) {
+                if (other.name === name)
+                    continue;
+                const op = positions[other.name];
+                const os = logicalSize(other);
+                const p = positions[name];
+                if (!rectsOverlap(p.x, p.y, size.width, size.height, op.x, op.y, os.width, os.height))
+                    continue;
+                // Penetration depth on each side; move by the smallest.
+                const pushRight = (op.x + os.width) - p.x;
+                const pushLeft = (p.x + size.width) - op.x;
+                const pushDown = (op.y + os.height) - p.y;
+                const pushUp = (p.y + size.height) - op.y;
+                const best = Math.min(pushRight, pushLeft, pushDown, pushUp);
+                if (best === pushRight) p.x += pushRight;
+                else if (best === pushLeft) p.x -= pushLeft;
+                else if (best === pushDown) p.y += pushDown;
+                else p.y -= pushUp;
+                moved = true;
+            }
+            if (!moved)
+                break;
+        }
+    }
+
     // Snap the dragged output's edges to its neighbors, then shift
     // everything so the layout origin is (0, 0), and commit all positions.
     function commitDrag(draggedName) {
         const positions = JSON.parse(JSON.stringify(root.layoutPositions));
         const dragged = root.enabledOutputs.find(o => o.name === draggedName);
-        if (dragged) {
+        if (dragged && root.snapEnabled) {
             const size = logicalSize(dragged);
             const p = positions[draggedName];
-            const threshold = 40;
-            let bestX = null;
-            let bestY = null;
+            // Generous, and proportional to the display: the canvas is scaled to fit,
+            // so a fixed 40 logical px was only a pixel or two of mouse travel and
+            // almost never caught. Overlaps are resolved below, so a wide snap zone
+            // costs nothing.
+            const threshold = Math.max(150, Math.min(size.width, size.height) * 0.25);
+            let bestX = null, bestY = null;
+            let bestXDist = Infinity, bestYDist = Infinity;
+            // The neighbour a FLUSH (side-by-side / stacked) snap landed against.
+            // Only a flush snap implies adjacency, and only adjacency implies the
+            // displays should be centred against each other on the other axis.
+            let flushXNeighbour = null, flushYNeighbour = null;
             for (const other of root.enabledOutputs) {
                 if (other.name === draggedName)
                     continue;
                 const op = positions[other.name];
                 const os = logicalSize(other);
-                // Candidate x positions: flush right-of / left-of / aligned edges.
-                for (const candidate of [op.x + os.width, op.x - size.width, op.x, op.x + os.width - size.width]) {
-                    if (Math.abs(p.x - candidate) < threshold
-                        && (bestX === null || Math.abs(p.x - candidate) < Math.abs(p.x - bestX)))
+                // Flush candidates first (adjacency), then pure edge alignments.
+                const xFlush = [op.x + os.width, op.x - size.width];
+                const xAlign = [op.x, op.x + os.width - size.width];
+                for (const candidate of xFlush.concat(xAlign)) {
+                    const dist = Math.abs(p.x - candidate);
+                    if (dist < threshold && dist < bestXDist) {
                         bestX = candidate;
+                        bestXDist = dist;
+                        flushXNeighbour = xFlush.indexOf(candidate) >= 0 ? other : null;
+                    }
                 }
-                // Candidate y positions: flush below / above / aligned edges.
-                for (const candidate of [op.y + os.height, op.y - size.height, op.y, op.y + os.height - size.height]) {
-                    if (Math.abs(p.y - candidate) < threshold
-                        && (bestY === null || Math.abs(p.y - candidate) < Math.abs(p.y - bestY)))
+                const yFlush = [op.y + os.height, op.y - size.height];
+                const yAlign = [op.y, op.y + os.height - size.height];
+                for (const candidate of yFlush.concat(yAlign)) {
+                    const dist = Math.abs(p.y - candidate);
+                    if (dist < threshold && dist < bestYDist) {
                         bestY = candidate;
+                        bestYDist = dist;
+                        flushYNeighbour = yFlush.indexOf(candidate) >= 0 ? other : null;
+                    }
                 }
             }
             if (bestX !== null)
                 p.x = bestX;
             if (bestY !== null)
                 p.y = bestY;
+
+            // Centre on the perpendicular axis. Side-by-side displays centre
+            // vertically, stacked ones centre horizontally -- which is what people
+            // mean by "arranged", and what you cannot hit by hand on a scaled canvas.
+            // Whichever axis snapped flush MORE tightly wins, so a corner drag
+            // resolves to one intent rather than fighting itself.
+            const preferX = flushXNeighbour && (!flushYNeighbour || bestXDist <= bestYDist);
+            const preferY = flushYNeighbour && !preferX;
+            if (preferX) {
+                const os = logicalSize(flushXNeighbour);
+                p.y = positions[flushXNeighbour.name].y + (os.height - size.height) / 2;
+            } else if (preferY) {
+                const os = logicalSize(flushYNeighbour);
+                p.x = positions[flushYNeighbour.name].x + (os.width - size.width) / 2;
+            }
+
+            resolveOverlaps(positions, draggedName);
+        } else if (dragged) {
+            // Snapping off: still refuse overlaps. Two displays occupying the same
+            // logical space is not a layout choice, it is a broken configuration.
+            resolveOverlaps(positions, draggedName);
         }
 
         // Normalize origin.
@@ -302,11 +388,22 @@ Flickable {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: 8
-                text: "drag to arrange · click to select"
+                text: root.snapEnabled ? "drag to arrange · snapping on · click to select"
+                                       : "drag to arrange · free positioning · click to select"
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.fontSize - 4
                 color: Theme.textFaint
             }
+        }
+
+        // Governs commitDrag: edge snapping, perpendicular centring, and the
+        // overlap refusal. Sits directly under the canvas it affects.
+        SettingSwitch {
+            width: parent.width
+            label: "snap displays"
+            hint: "snap edges together, centre on the other axis, and never overlap"
+            checked: root.snapEnabled
+            onToggled: value => Settings.set("minkaconf.snapDisplays", value)
         }
 
         // ---- revert guard ----------------------------------------------
