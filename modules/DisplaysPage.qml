@@ -16,6 +16,10 @@ Flickable {
     // Working copy of logical positions while dragging: { name: {x, y} }.
     property var layoutPositions: ({})
 
+    // Set when enabling HDR forced a mode change, so the user is told why the
+    // resolution moved under them rather than discovering it later.
+    property string hdrDowngradeNote: ""
+
     // Layout maths (drag, snapping, collision, world bounds) applies only to
     // outputs that actually occupy desktop space.
     readonly property var enabledOutputs:
@@ -31,6 +35,66 @@ Flickable {
 
     readonly property var selectedOutput:
         outputs.find(o => o.name === root.selectedName) ?? null
+
+
+    // ---- link bandwidth ------------------------------------------------
+    //
+    // Supporting a mode and being able to carry it are different questions.
+    // PQ needs 10 bits per component, costing pixelClock * 10/8 of TMDS
+    // character rate, so 3840x2160@60 wants 742.5 MHz against HDMI 2.0's 600
+    // MHz ceiling — on a sink whose EDID advertises both the mode and ST 2084.
+    // The driver then quietly drops to 8 bpc or subsamples chroma, and PQ
+    // tolerates neither: 8-bit PQ bands badly in near-black because the curve
+    // spends most of its range there. So filter the list rather than offer a
+    // mode that cannot work.
+
+    // Bits per component a mode needs on this output. HDR means PQ means 10.
+    function requiredBpc(output) {
+        if (!output)
+            return 8;
+        return Settings.get(`displays.${output.name}.hdr`, false) === true ? 10 : 8;
+    }
+
+    // Wire rate in Gbit/s: TMDS sends bpc bits per component on 3 lanes with
+    // 8b/10b encoding, over the FULL pixel clock — blanking is transmitted too,
+    // which is why the clock and not the active pixel count is the input.
+    function modeBandwidthGbps(mode, bpc) {
+        if (!mode || !mode.clockKhz)
+            return null;
+        return mode.clockKhz / 1000000 * bpc * 3 * 10 / 8;
+    }
+
+    // null when the sink states no ceiling — unknown is not the same as unfit,
+    // so an unknown link must never hide modes.
+    function modeFits(output, mode, bpc) {
+        if (!output || !output.hdmi || !mode || !mode.clockKhz)
+            return null;
+        if (output.hdmi.maxTmdsKhz)
+            return Math.round(mode.clockKhz * bpc / 8) <= output.hdmi.maxTmdsKhz;
+        if (output.hdmi.maxBandwidthGbps) {
+            let needed = root.modeBandwidthGbps(mode, bpc);
+            return needed === null ? null : needed <= output.hdmi.maxBandwidthGbps;
+        }
+        return null;
+    }
+
+    // Highest-resolution, then highest-refresh mode that fits at `bpc`.
+    function bestFittingMode(output, bpc) {
+        if (!output)
+            return null;
+        let modes = (output.availableModes ?? []).slice().sort(
+            (a, b) => (b.width * b.height - a.width * a.height)
+                || (b.refreshRate - a.refreshRate));
+        for (let i = 0; i < modes.length; i++)
+            if (root.modeFits(output, modes[i], bpc) === true)
+                return modes[i];
+        return null;
+    }
+
+    function sameMode(a, b) {
+        return !!a && !!b && a.width === b.width && a.height === b.height
+            && Math.round(a.refreshRate) === Math.round(b.refreshRate);
+    }
 
     function logicalSize(output) {
         return {
@@ -469,6 +533,31 @@ Flickable {
                 color: Theme.text
             }
 
+            // What the link can carry, so the filtered mode list below is
+            // explicable rather than mysteriously short.
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                visible: !!root.selectedOutput && !!root.selectedOutput.hdmi
+                text: {
+                    let output = root.selectedOutput;
+                    if (!output || !output.hdmi)
+                        return "";
+                    let link = output.hdmi;
+                    let parts = [link.standard];
+                    if (link.maxBandwidthGbps)
+                        parts.push(`${link.maxBandwidthGbps.toFixed(1)} Gbps`);
+                    if (link.maxTmdsKhz)
+                        parts.push(`${Math.round(link.maxTmdsKhz / 1000)} MHz TMDS`);
+                    let bpc = root.requiredBpc(output);
+                    parts.push(bpc === 10 ? "10-bit (HDR)" : "8-bit");
+                    return "link:  " + parts.join("  ·  ");
+                }
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSize - 3
+                color: Theme.textFaint
+            }
+
             DropdownPicker {
                 width: parent.width
                 label: "mode"
@@ -476,19 +565,30 @@ Flickable {
                     const output = root.selectedOutput;
                     if (!output)
                         return [];
-                    const seen = new Set();
-                    const list = [{ label: "best (auto)", value: "best" }];
-                    const modes = (output.availableModes ?? [])
+                    let seen = new Set();
+                    let list = [{ label: "best (auto)", value: "best" }];
+                    let bpc = root.requiredBpc(output);
+                    let modes = (output.availableModes ?? [])
                         .slice()
                         .sort((a, b) => (b.width * b.height - a.width * a.height)
                             || (b.refreshRate - a.refreshRate));
-                    for (const mode of modes) {
-                        const key = `${mode.width}x${mode.height}@${Math.round(mode.refreshRate)}`;
+                    for (let i = 0; i < modes.length; i++) {
+                        let mode = modes[i];
+                        let key = `${mode.width}x${mode.height}@${Math.round(mode.refreshRate)}`;
                         if (seen.has(key))
                             continue;
+                        // Drop only what the sink positively cannot carry.
+                        // modeFits returns null when the link is unknown, and
+                        // an unknown link must not silently empty the list.
+                        if (root.modeFits(output, mode, bpc) === false)
+                            continue;
                         seen.add(key);
+                        let gbps = root.modeBandwidthGbps(mode, bpc);
+                        let label = `${mode.width}x${mode.height} @ ${Math.round(mode.refreshRate)}Hz`;
+                        if (gbps !== null)
+                            label += `   ${gbps.toFixed(1)} Gbps`;
                         list.push({
-                            label: `${mode.width}x${mode.height} @ ${Math.round(mode.refreshRate)}Hz`,
+                            label: label,
                             value: {
                                 width: mode.width,
                                 height: mode.height,
@@ -576,10 +676,48 @@ Flickable {
                     : false
                 onToggled: value => {
                     Settings.beginRisky();
-                    Settings.patchDisplay(root.selectedName, { hdr: value });
+                    let patch = { hdr: value };
+                    // Turning HDR on raises the signal to 10 bpc, which can put
+                    // the running mode over the link ceiling. Rather than let
+                    // the driver silently fall back to 8 bpc or subsampled
+                    // chroma — both of which wreck PQ in near-black — step down
+                    // to the best mode that actually fits.
+                    if (value) {
+                        let output = root.selectedOutput;
+                        let current = output ? output.resolution : null;
+                        if (output && current
+                                && root.modeFits(output, current, 10) === false) {
+                            let target = root.bestFittingMode(output, 10);
+                            if (target && !root.sameMode(target, current)) {
+                                patch.resolution = {
+                                    width: target.width,
+                                    height: target.height,
+                                    refreshRate: target.refreshRate
+                                };
+                                root.hdrDowngradeNote =
+                                    `${current.width}x${current.height}@${Math.round(current.refreshRate)} `
+                                    + `needs ${(root.modeBandwidthGbps(current, 10) ?? 0).toFixed(1)} Gbps at 10-bit; `
+                                    + `dropped to ${target.width}x${target.height}@${Math.round(target.refreshRate)}`;
+                            }
+                        }
+                    } else {
+                        root.hdrDowngradeNote = "";
+                    }
+                    Settings.patchDisplay(root.selectedName, patch);
                     refreshTimer.restart();
                 }
             }
+        }
+
+        // Why the resolution moved when HDR was switched on.
+        Text {
+            visible: root.hdrDowngradeNote !== ""
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "mode changed for HDR:  " + root.hdrDowngradeNote
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSize - 3
+            color: Theme.warnAmber
         }
 
         Text {
