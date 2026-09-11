@@ -707,6 +707,58 @@ Flickable {
                     refreshTimer.restart();
                 }
             }
+
+            // Physical order of the panel's subpixels. ShojiWM advertises it to
+            // apps through wl_output, and text renderers such as foot use it for
+            // subpixel antialiasing. "detected" stores null, which keeps what the
+            // kernel reported (unknown for most panels). It cannot blank the
+            // screen, so unlike mode or HDR it skips the revert guard.
+            DropdownPicker {
+                width: parent.width
+                label: "subpixel layout"
+                options: {
+                    const output = root.selectedOutput;
+                    const detected = output && output.detectedSubpixel
+                        ? output.detectedSubpixel
+                        : "not reported";
+                    return [
+                        { label: `detected (${detected})`, value: null },
+                        { label: "horizontal RGB (most LCD panels)", value: "horizontal-rgb" },
+                        { label: "horizontal BGR", value: "horizontal-bgr" },
+                        { label: "vertical RGB", value: "vertical-rgb" },
+                        { label: "vertical BGR", value: "vertical-bgr" },
+                        { label: "none (no subpixel antialiasing)", value: "none" },
+                        { label: "unknown (apps choose)", value: "unknown" }
+                    ];
+                }
+                current: root.selectedOutput
+                    ? Settings.get(`displays.${root.selectedOutput.name}.subpixel`, null)
+                    : null
+                onPicked: value => {
+                    Settings.patchDisplay(root.selectedName, { subpixel: value });
+                    refreshTimer.restart();
+                }
+            }
+
+            // What apps are being told right now, so a choice that has not taken
+            // effect (a ShojiWM without subpixel support) shows instead of silently
+            // doing nothing.
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                visible: root.selectedOutput !== null
+                text: {
+                    const output = root.selectedOutput;
+                    if (!output)
+                        return "";
+                    if (output.subpixel === undefined)
+                        return "this ShojiWM does not report subpixel layouts yet: the choice is saved and takes effect once it does";
+                    return `advertised to apps:  ${output.subpixel}  ·  physical order, before any rotation`;
+                }
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSize - 3
+                color: Theme.textFaint
+            }
         }
 
         // Why the resolution moved when HDR was switched on.
