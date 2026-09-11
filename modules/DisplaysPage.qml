@@ -20,6 +20,22 @@ Flickable {
     // resolution moved under them rather than discovering it later.
     property string hdrDowngradeNote: ""
 
+    // True from a subpixel pick until the next compositor refresh lands, so the
+    // saved-vs-advertised comparison below never flashes a stale mismatch.
+    property bool subpixelRefreshPending: false
+
+    // The saved subpixel choice is not what apps are being told. Disabled
+    // displays are exempt: their wl_output is withdrawn, so nothing is told.
+    readonly property bool subpixelMismatch: {
+        const output = root.selectedOutput;
+        if (!output || output.subpixel === undefined || root.subpixelRefreshPending)
+            return false;
+        if (output.enabled !== true && !Settings.get(`displays.${output.name}.mirror`, null))
+            return false;
+        const saved = Settings.get(`displays.${output.name}.subpixel`, null);
+        return (saved ?? output.detectedSubpixel) !== output.subpixel;
+    }
+
     // Layout maths (drag, snapping, collision, world bounds) applies only to
     // outputs that actually occupy desktop space.
     readonly property var enabledOutputs:
@@ -117,6 +133,7 @@ Flickable {
             list.sort((a, b) => a.name.localeCompare(b.name));
             root.outputs = list;
             root.layoutPositions = positions;
+            root.subpixelRefreshPending = false;
             if (!root.selectedName && list.length > 0)
                 root.selectedName = (list.find(o => o.enabled) ?? list[0]).name;
         });
@@ -709,10 +726,12 @@ Flickable {
             }
 
             // Physical order of the panel's subpixels. ShojiWM advertises it to
-            // apps through wl_output, and text renderers such as foot use it for
-            // subpixel antialiasing. "detected" stores null, which keeps what the
-            // kernel reported (unknown for most panels). It cannot blank the
-            // screen, so unlike mode or HDR it skips the revert guard.
+            // apps through wl_output. fcft apps such as foot use it for subpixel
+            // antialiasing; apps rendering through fontconfig follow its rgba
+            // setting instead. "detected" stores null, which keeps what the kernel
+            // reported (unknown for most panels). It cannot blank the screen, so it
+            // does not arm the revert guard, though a countdown already running
+            // rolls it back with the rest.
             DropdownPicker {
                 width: parent.width
                 label: "subpixel layout"
@@ -727,22 +746,23 @@ Flickable {
                         { label: "horizontal BGR", value: "horizontal-bgr" },
                         { label: "vertical RGB", value: "vertical-rgb" },
                         { label: "vertical BGR", value: "vertical-bgr" },
-                        { label: "none (no subpixel antialiasing)", value: "none" },
-                        { label: "unknown (apps choose)", value: "unknown" }
+                        { label: "none (greyscale in apps that honour it)", value: "none" },
+                        { label: "unknown (apps use their own setting)", value: "unknown" }
                     ];
                 }
                 current: root.selectedOutput
                     ? Settings.get(`displays.${root.selectedOutput.name}.subpixel`, null)
                     : null
                 onPicked: value => {
+                    root.subpixelRefreshPending = true;
                     Settings.patchDisplay(root.selectedName, { subpixel: value });
                     refreshTimer.restart();
                 }
             }
 
             // What apps are being told right now, so a choice that has not taken
-            // effect (a ShojiWM without subpixel support) shows instead of silently
-            // doing nothing.
+            // effect (a ShojiWM without subpixel support, or a session config that
+            // does not forward it) shows instead of silently doing nothing.
             Text {
                 width: parent.width
                 wrapMode: Text.WordWrap
@@ -753,11 +773,16 @@ Flickable {
                         return "";
                     if (output.subpixel === undefined)
                         return "this ShojiWM does not report subpixel layouts yet: the choice is saved and takes effect once it does";
-                    return `advertised to apps:  ${output.subpixel}  ·  physical order, before any rotation`;
+                    if (output.enabled !== true && !Settings.get(`displays.${output.name}.mirror`, null))
+                        return "not advertised while this display is disabled";
+                    const saved = Settings.get(`displays.${output.name}.subpixel`, null);
+                    if (root.subpixelMismatch)
+                        return `saved ${saved ?? "detected"}, but apps are told ${output.subpixel}: the running session config does not forward it`;
+                    return `apps are told ${output.subpixel}  ·  kernel reported ${output.detectedSubpixel}  ·  physical order, before any rotation  ·  read by fcft apps such as foot; fontconfig apps follow its rgba setting`;
                 }
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSize - 3
-                color: Theme.textFaint
+                color: root.subpixelMismatch ? Theme.warnAmber : Theme.textFaint
             }
         }
 
