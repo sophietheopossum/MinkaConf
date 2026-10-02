@@ -119,7 +119,11 @@ Singleton {
     function revertRisky() {
         if (_revertSnapshot === null)
             return;
-        root.data = _revertSnapshot;
+        // Only display changes are risky, so only displays revert: an edit made
+        // elsewhere during the countdown (input, cursor, desktops) survives.
+        const next = JSON.parse(JSON.stringify(root.data));
+        next.displays = _revertSnapshot.displays;
+        root.data = next;
         _revertSnapshot = null;
         revertTimer.stop();
         save();

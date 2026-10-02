@@ -8,7 +8,8 @@ import "../services"
 // ScreenPad by shape (wide and short), which is also the effective default
 // when no settings file exists yet — a wrong first-run guess just means
 // flipping this switch. MinkaShell watches the settings file, so the change
-// lands live without a reload.
+// lands live without a reload. The desktops switch turns virtual desktops
+// off or on (workspaces.enabled), applied live through settings.apply.
 Flickable {
     id: root
 
@@ -63,6 +64,36 @@ Flickable {
         Text {
             width: parent.width
             text: "zenbook duo pins the bar, dock and menus to the ScreenPad and keeps the main display clear; general lays out every output KDE-style"
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSize - 2
+            color: Theme.textMuted
+            wrapMode: Text.WordWrap
+        }
+
+        Item { width: 1; height: 8 }
+
+        Text {
+            text: "desktops"
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.fontSize - 2
+            color: Theme.red
+        }
+
+        // Not through the display revert guard: an auto-revert here would
+        // bounce windows between folded and unfolded desktops.
+        SettingSwitch {
+            width: parent.width
+            // Without a loaded settings file a write would drop input/displays.
+            enabled: Settings.ready
+            label: "virtual desktops"
+            hint: "off folds every monitor onto one desktop; no window closes"
+            checked: Settings.get("workspaces.enabled", true) !== false
+            onToggled: value => Settings.set("workspaces.enabled", value)
+        }
+
+        Text {
+            width: parent.width
+            text: "off: Super+Ctrl+Up/Down and Super+Shift+Up/Down reach apps instead, the vertical three-finger swipe stops switching desktops, and the bar hides its desktop pills; tiling (Super+S) is unaffected"
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontSize - 2
             color: Theme.textMuted
