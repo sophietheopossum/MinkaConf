@@ -71,20 +71,10 @@ def decode_first_frame(path):
     pixels = data[position + 36 : position + 36 + width * height * 4]
     if len(pixels) < width * height * 4:
         return None
-    image = Image.frombuffer("RGBA", (width, height), pixels, "raw", "BGRA", 0, 1)
-    # Xcursor stores premultiplied alpha; PNG wants straight alpha.
-    loaded = image.load()
-    for y in range(height):
-        for x in range(width):
-            r, g, b, a = loaded[x, y]
-            if 0 < a < 255:
-                loaded[x, y] = (
-                    min(255, r * 255 // a),
-                    min(255, g * 255 // a),
-                    min(255, b * 255 // a),
-                    a,
-                )
-    return image
+    # Xcursor stores premultiplied alpha; PNG wants straight alpha. The
+    # "BGRa" raw mode (lowercase a = premultiplied) has Pillow un-premultiply
+    # while unpacking, with the same truncating c * 255 // a.
+    return Image.frombuffer("RGBA", (width, height), pixels, "raw", "BGRa", 0, 1)
 
 
 def discover_themes():
