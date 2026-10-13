@@ -20,7 +20,8 @@ Singleton {
     // Config-schema revision handshake. requiredRevision is what this build
     // of MinkaConf expects; sessionRevision is what the running config
     // reports (0 = config too old to even have the handshake, -1 = unknown/
-    // not connected). A mismatch means "reload the config".
+    // not connected). A mismatch means the session runs an older config than
+    // this app: reinstall ShojiWM and start a new session.
     readonly property int requiredRevision: 5
     property int sessionRevision: -1
     readonly property bool revisionStale:

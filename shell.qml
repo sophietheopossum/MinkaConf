@@ -160,7 +160,8 @@ ShellRoot {
         }
 
         // Stale-config banner: the running session predates this app's
-        // settings schema, so edits would only half-apply until a reload.
+        // settings schema, so edits would only half-apply until a newer
+        // ShojiWM is installed and a new session started.
         Rectangle {
             id: staleBanner
 
@@ -173,7 +174,7 @@ ShellRoot {
 
             Text {
                 anchors.centerIn: parent
-                text: "session config is older than MinkaConf — press Super+Shift+R to reload it"
+                text: "session config is older than MinkaConf — reinstall ShojiWM and start a new session"
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSize - 1
                 color: Theme.text
